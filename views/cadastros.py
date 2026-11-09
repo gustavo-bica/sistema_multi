@@ -1,23 +1,26 @@
 import streamlit as st
 import requests
 import base64
+import re
 from datetime import datetime
 from config.database import get_db_connection, get_supabase_client
 
-# Função para mascarar o CPF no padrão 017.***.***-64
+# Função para mascarar o CPF com escape de Markdown (\*) para não sumir no st.write
 def formatar_cpf_mascarado(cpf):
     if not cpf:
         return "-"
-    # Remove qualquer caractere que não seja dígito numerador
-    apenas_numeros = "".join(filter(str.isdigit, str(cpf)))
     
+    # Extrai apenas os dígitos numéricos
+    apenas_numeros = re.sub(r'\D', '', str(cpf))
+    
+    # Se possuir 11 dígitos
     if len(apenas_numeros) == 11:
-        primeiros_tres = apenas_numeros[:3]
-        ultimos_dois = apenas_numeros[-2:]
-        return f"{primeiros_tres}.***.***-{ultimos_dois}"
+        p1 = apenas_numeros[:3]
+        p2 = apenas_numeros[-2:]
+        # Usa '\*' para evitar que o Streamlit interprete os asteriscos como formatação de texto
+        return f"{p1}.\\*\\*\\*.\\*\\*\\*-{p2}"
     
-    # Se por algum motivo o CPF no banco não tiver 11 dígitos, retorna o valor original
-    return cpf
+    return str(cpf)
 
 # Função para renderizar PDF corretamente via Base64 em HTML
 def render_pdf_embed(pdf_url, height=500):
@@ -101,7 +104,6 @@ def modal_anexos(pessoa):
                 format_func=lambda a: a['nome']
             )
             if pdf_sel:
-                # Renderizador corrigido com Base64/embed
                 render_pdf_embed(pdf_sel['url'], height=550)
         else:
             st.info("Nenhum anexo encontrado para esta pessoa.")
@@ -133,7 +135,6 @@ def render():
                         conn = get_db_connection()
                         cursor = conn.cursor()
                         
-                        # Converte a data do formulário para o formato aceito pelo MySQL (AAAA-MM-DD)
                         data_formatada_mysql = data_nasc.strftime('%Y-%m-%d') if data_nasc else None
                         
                         query = "INSERT INTO pessoas (nome, tipo_pessoa, data_nascimento, cpf) VALUES (%s, %s, %s, %s)"
@@ -168,7 +169,7 @@ def render():
             c2.write("**Tipo**")
             c3.write("**Data Nasc.**")
             c4.write("**CPF**")
-            c5.write("**Laudos**")
+            c5.write("**Arquivos**")
 
             for p in pessoas:
                 col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
@@ -180,7 +181,7 @@ def render():
                 data_exibicao = dt_nasc.strftime('%d/%m/%Y') if dt_nasc else "-"
                 col3.write(data_exibicao)
                 
-                # Aplicação da máscara visual do CPF
+                # Aplicação da máscara visual do CPF com escape de Markdown
                 col4.write(formatar_cpf_mascarado(p['cpf']))
                 
                 if col5.button("📎 Anexos", key=f"btn_anexos_{p['id']}"):
