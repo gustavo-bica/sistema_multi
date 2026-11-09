@@ -168,7 +168,7 @@ def render():
             c2.write("**Tipo**")
             c3.write("**Data Nasc.**")
             c4.write("**CPF**")
-            c5.write("**Arquivos**")
+            c5.write("**Laudos**")
 
             for p in pessoas:
                 col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 2])
