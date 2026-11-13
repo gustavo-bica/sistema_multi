@@ -5,22 +5,30 @@ from config.database import get_supabase_client
 def render():
     st.title("Formulário de Encaminhamento")
 
-    # 1. Selecionar o Aluno / Pessoa Cadastrado via API Supabase
+    # 1. Selecionar o Aluno/Pessoa Cadastrado via API Supabase
     try:
         supabase = get_supabase_client()
-        res_pessoas = supabase.table("pessoas").select("id, nome, data_nascimento, cpf").order("nome", desc=False).execute()
+        res_pessoas = (
+            supabase.table("pessoas")
+            .select("id, nome, data_nascimento, cpf")
+            .eq("tipo_pessoa", "Aluno")
+            .order("nome", desc=False)
+            .execute()
+        )
         pessoas = res_pessoas.data
     except Exception as e:
         st.error(f"Erro ao carregar lista de alunos/pessoas: {e}")
         return
 
     if not pessoas:
-        st.warning("Nenhuma pessoa cadastrada no sistema. Cadastre primeiro na tela 'Cadastros'.")
+        st.warning("Nenhum estudante cadastrado no sistema. Cadastre primeiro na tela 'Cadastros'.")
         return
 
     pessoa_sel = st.selectbox(
         "Selecione o Estudante/Pessoa:*",
         options=pessoas,
+        index=None,
+        placeholder="Selecione",
         format_func=lambda p: f"{p['nome']} (CPF: {p.get('cpf') or 'Não informado'})"
     )
 
@@ -36,13 +44,14 @@ def render():
     with st.form("form_encaminhamento", clear_on_submit=False):
         st.header(f"Ficha de Encaminhamento - {nivel_ensino}")
 
-        # --- SEÇÃO A: DADOS GERAIS DO ENCAMINHAMENTO ---
+        # SEÇÃO A: DADOS GERAIS DO ENCAMINHAMENTO
         col1, col2 = st.columns(2)
         with col1:
             escola = st.text_input("Escola:*")
             data_encaminhamento = st.date_input("Data do Encaminhamento:*", format="DD/MM/YYYY")
             turma = st.text_input("Turma:")
             turno = st.selectbox("Turno:", ["Manhã", "Tarde", "Integral", "Noite"])
+
         with col2:
             profissionais = st.multiselect(
                 "Encaminhamento para:*",
@@ -57,7 +66,7 @@ def render():
         mae_nome = col_mae1.text_input("Nome da Mãe:")
         mae_idade = col_mae2.number_input("Idade da Mãe:", min_value=0, max_value=120, value=0)
         mae_tel = col_mae3.text_input("Telefone da Mãe:")
-        
+
         col_mae4, col_mae5 = st.columns(2)
         mae_prof = col_mae4.text_input("Profissão da Mãe:")
         mae_local = col_mae5.text_input("Local de Trabalho da Mãe:")
@@ -66,7 +75,7 @@ def render():
         pai_nome = col_pai1.text_input("Nome do Pai:")
         pai_idade = col_pai2.number_input("Idade do Pai:", min_value=0, max_value=120, value=0)
         pai_tel = col_pai3.text_input("Telefone do Pai:")
-        
+
         col_pai4, col_pai5 = st.columns(2)
         pai_prof = col_pai4.text_input("Profissão do Pai:")
         pai_local = col_pai5.text_input("Local de Trabalho do Pai:")
@@ -76,10 +85,9 @@ def render():
         ponto_ref = col_end2.text_input("Ponto de Referência do Domicílio:")
         melhor_turno_visita = st.text_input("Melhor turno/horário para visita domiciliar (se Assistente Social):")
 
-        # --- SEÇÃO B: COMPOSIÇÃO FAMILIAR ---
+        # SEÇÃO B: COMPOSIÇÃO FAMILIAR
         st.subheader("Composição Familiar")
         st.caption("Adicione até 3 membros residentes na mesma casa:")
-        
         fam_membros = []
         for i in range(1, 4):
             with st.expander(f"Membro Familiar {i}"):
@@ -91,12 +99,14 @@ def render():
                 f_trabalho = st.text_input(f"Local de Trabalho {i}:", key=f"ftrab_{i}")
                 if f_nome:
                     fam_membros.append({
-                        "nome": f_nome, "idade": f_idade, 
-                        "parentesco": f_parentesco, "escolaridade": f_escolaridade, 
+                        "nome": f_nome,
+                        "idade": f_idade,
+                        "parentesco": f_parentesco,
+                        "escolaridade": f_escolaridade,
                         "trabalho": f_trabalho
                     })
 
-        # --- SEÇÃO C: QUESTÕES CENTRAIS ---
+        # SEÇÃO C: QUESTÕES CENTRAIS
         st.subheader("Questões do Encaminhamento")
         motivo = st.text_area("3. Motivo do encaminhamento:*")
         opiniao_pais = st.text_area("4. Opinião dos pais sobre o encaminhamento:")
@@ -104,9 +114,8 @@ def render():
         obs_importantes = st.text_area("Observações importantes sobre a criança/família:")
         acoes_escola = st.text_area("Ações/Intervenções que a escola já adotou:")
 
-        # --- SEÇÃO D: CAMPOS ESPECÍFICOS DO NÍVEL DE ENSINO ---
+        # SEÇÃO D: CAMPOS ESPECÍFICOS DO NÍVEL DE ENSINO
         st.divider()
-        
         if nivel_ensino == "Educação Infantil":
             st.subheader("Observações Específicas - Educação Infantil")
             col_inf1, col_inf2 = st.columns(2)
@@ -116,19 +125,17 @@ def render():
             esfincteres = col_inf2.text_input("Controle dos esfíncteres:")
             higiene = col_inf1.text_input("Higiene:")
             brincar_social = col_inf2.text_input("Brincar e Socialização:")
-            
+
             compreende_falam = st.checkbox("Compreende o que lhe é falado?")
             consegue_expressar = st.checkbox("Consegue expressar seus desejos e necessidades?")
             uso_corpo_palavras = st.text_area("Usa palavras/frases ou gestos/corpo?")
             problema_fala = st.text_area("Problemas na articulação da fala:")
             avaliacao_auditiva = st.text_area("Avaliação auditiva / Histórico de otites:")
-            
             psico_ampla = st.text_input("Psicomotricidade Ampla:")
             psico_fina = st.text_input("Psicomotricidade Fina:")
             esquema_corp = st.text_input("Esquema corporal / Lateralidade:")
             saude_posto = st.text_area("Saúde / Acompanhamento / Medicamentos / Posto:")
-
-        else: # Ensino Fundamental
+        else:  # Ensino Fundamental
             st.subheader("Observações Específicas - Ensino Fundamental")
             saude_posto = st.text_area("Saúde / Acompanhamento / Medicamentos / Posto:")
             avaliacao_auditiva = st.text_area("Avaliação auditiva / Histórico de otites:")
@@ -139,39 +146,39 @@ def render():
             memoria = st.text_input("Memória:")
             interesses_hab = st.text_input("Interesses e Habilidades:")
             chupeta_mamadeira = st.text_input("Uso de chupeta e mamadeira:")
-            
+
             st.markdown("**Linguagem:**")
             escrita = st.text_input("a) Escrita:")
             leitura = st.text_input("b) Leitura:")
             linguagem_falada = st.text_input("c) Linguagem Falada:")
             raciocinio_logico = st.text_input("Raciocínio Lógico-Matemático:")
-            
+
             st.markdown("**Socialização:**")
             part_grupos = st.text_input("Participação em grupos:")
             rel_colegas = st.text_input("Relacionamento com colegas:")
             rel_professor = st.text_input("Relacionamento com professor(a):")
             reacao_regras = st.text_input("Como reage às regras:")
             atitudes_aula = st.text_input("Atitudes no trabalho de aula:")
-            
             part_familia = st.text_area("Interesse e participação da família:")
             impressao_familia = st.text_area("Impressão quanto ao ambiente familiar:")
-            
+
             st.markdown("**Intervenções da Escola:**")
             interv_prof = st.text_area("a) do(a) professor(a):")
             interv_direcao = st.text_area("b) da direção:")
             interv_pedag = st.text_area("c) da equipe pedagógica:")
             outras_obs = st.text_area("Outras observações:")
 
-        # --- SUBMISSÃO DO FORMULÁRIO ---
+        # SUBMISSÃO DO FORMULÁRIO
         btn_salvar = st.form_submit_button("Salvar Ficha de Encaminhamento")
 
         if btn_salvar:
-            if not escola or not motivo or not profissionais:
+            if not pessoa_sel:
+                st.error("Selecione o Estudante/Pessoa antes de salvar a ficha.")
+            elif not escola or not motivo or not profissionais:
                 st.error("Preencha os campos obrigatórios (*): Escola, Motivo e Profissionais de destino.")
             else:
                 try:
                     supabase = get_supabase_client()
-
                     dt_encam_str = data_encaminhamento.strftime('%Y-%m-%d') if data_encaminhamento else None
                     dt_ingr_str = data_ingresso.strftime('%Y-%m-%d') if data_ingresso else None
                     prof_str = ", ".join(profissionais)
@@ -179,6 +186,7 @@ def render():
                     # 1. Inserção Principal na Tabela 'encaminhamentos'
                     dados_encaminhamento = {
                         "pessoa_id": pessoa_sel['id'],
+                        "status": "Pendente",
                         "nivel_ensino": nivel_ensino,
                         "escola": escola,
                         "data_encaminhamento": dt_encam_str,
@@ -209,10 +217,8 @@ def render():
                     }
 
                     res_principal = supabase.table("encaminhamentos").insert(dados_encaminhamento).select("id").execute()
-                    
                     if not res_principal.data:
                         raise Exception("Falha ao obter o ID do encaminhamento inserido.")
-
                     encaminhamento_id = res_principal.data[0]['id']
 
                     # 2. Inserção na Tabela 'composicao_familiar'
@@ -280,7 +286,7 @@ def render():
                         }
                         supabase.table("encaminhamento_fundamental").insert(dados_fundamental).execute()
 
-                    st.success("Encaminhamento salvo com sucesso no banco de dados!")
+                    st.success("Encaminhamento salvo com sucesso!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar encaminhamento: {e}")
