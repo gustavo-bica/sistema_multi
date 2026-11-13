@@ -98,7 +98,7 @@ def render():
 
         # SEÇÃO B: COMPOSIÇÃO FAMILIAR
         st.subheader("Composição Familiar")
-        st.caption("Adicione até 3 membros residentes na mesma casa:")
+        st.caption("Adicione os membros residentes na mesma casa:")
         fam_membros = []
         for i in range(1, 4):
             with st.expander(f"Membro Familiar {i}"):
@@ -180,7 +180,7 @@ def render():
             outras_obs = st.text_area("Outras observações:")
 
         # SUBMISSÃO DO FORMULÁRIO
-        btn_salvar = st.form_submit_button("Salvar Ficha de Encaminhamento")
+        btn_salvar = st.form_submit_button("Enviar solicitação de encaminhamento")
 
         if btn_salvar:
             if not pessoa_sel:
