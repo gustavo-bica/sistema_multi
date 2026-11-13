@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 import base64
 import re
-from datetime import datetime
-from config.database import get_db_connection, get_supabase_client
+from datetime import datetime, date
+from config.database import get_supabase_client
 
 # Função para mascarar o CPF com escape de Markdown (\*) para não sumir no st.write
 def formatar_cpf_mascarado(cpf):
@@ -17,7 +17,6 @@ def formatar_cpf_mascarado(cpf):
     if len(apenas_numeros) == 11:
         p1 = apenas_numeros[:3]
         p2 = apenas_numeros[-2:]
-        # Usa '\*' para evitar que o Streamlit interprete os asteriscos como formatação de texto
         return f"{p1}.\\*\\*\\*.\\*\\*\\*-{p2}"
     
     return str(cpf)
@@ -35,7 +34,7 @@ def render_pdf_embed(pdf_url, height=500):
     except Exception as e:
         st.error(f"Erro ao processar visualização do PDF: {e}")
 
-# Modal (Janela sobreposta) para Anexos do Estudante / Pessoa
+# Modal para Anexos do Estudante / Pessoa
 @st.dialog("Anexos do Estudante / Pessoa", width="large")
 def modal_anexos(pessoa):
     st.write(f"**Pessoa selecionada:** {pessoa['nome']} ({pessoa['tipo_pessoa']})")
@@ -52,9 +51,6 @@ def modal_anexos(pessoa):
     if uploaded_files and st.button("Salvar Anexos", key=f"btn_upload_{pessoa['id']}"):
         try:
             supabase = get_supabase_client()
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
             NOME_BUCKET = "documentos-estudantes"
             
             for pdf in uploaded_files:
@@ -71,15 +67,13 @@ def modal_anexos(pessoa):
                 # Obter URL pública
                 public_url = supabase.storage.from_(NOME_BUCKET).get_public_url(file_path)
                 
-                # Gravação no MySQL
-                cursor.execute(
-                    "INSERT INTO arquivos (pessoa_id, nome, url) VALUES (%s, %s, %s)",
-                    (pessoa['id'], pdf.name, public_url)
-                )
+                # Gravação na tabela arquivos do Supabase via API (Porta 443)
+                supabase.table("arquivos").insert({
+                    "pessoa_id": pessoa['id'],
+                    "nome": pdf.name,
+                    "url": public_url
+                }).execute()
             
-            conn.commit()
-            cursor.close()
-            conn.close()
             st.success("PDF(s) salvo(s) com sucesso!")
             st.rerun()
         except Exception as e:
@@ -90,12 +84,9 @@ def modal_anexos(pessoa):
     # Seção 2: Listagem e Exibição de Anexos Cadastrados
     st.subheader("📚 Anexos Cadastrados")
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM arquivos WHERE pessoa_id = %s ORDER BY id DESC", (pessoa['id'],))
-        arquivos = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        supabase = get_supabase_client()
+        res = supabase.table("arquivos").select("*").eq("pessoa_id", pessoa['id']).order("id", desc=True).execute()
+        arquivos = res.data
         
         if arquivos:
             pdf_sel = st.selectbox(
@@ -120,11 +111,13 @@ def render():
             nome = st.text_input("Nome Completo*")
             tipo = st.selectbox("Tipo de Pessoa*", ["Aluno", "Professor", "Equipe Multi"])
             
-            # Campo de data formatado no padrão brasileiro (DD/MM/AAAA)
+            # Ajuste de min_value e max_value para aceitar datas antigas de nascimento
             data_nasc = st.date_input(
                 "Data de Nascimento",
                 format="DD/MM/YYYY",
-                value=None
+                value=None,
+                min_value=date(1920, 1, 1),
+                max_value=date.today()
             )
             
             cpf = st.text_input("CPF (apenas números ou formatado)*")
@@ -132,17 +125,17 @@ def render():
             if st.form_submit_button("Salvar Cadastramento"):
                 if nome and cpf:
                     try:
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
+                        supabase = get_supabase_client()
                         
-                        data_formatada_mysql = data_nasc.strftime('%Y-%m-%d') if data_nasc else None
+                        data_formatada = data_nasc.strftime('%Y-%m-%d') if data_nasc else None
                         
-                        query = "INSERT INTO pessoas (nome, tipo_pessoa, data_nascimento, cpf) VALUES (%s, %s, %s, %s)"
-                        cursor.execute(query, (nome, tipo, data_formatada_mysql, cpf))
+                        supabase.table("pessoas").insert({
+                            "nome": nome,
+                            "tipo_pessoa": tipo,
+                            "data_nascimento": data_formatada,
+                            "cpf": cpf
+                        }).execute()
                         
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
                         st.success(f"Pessoa '{nome}' cadastrada com sucesso!")
                         st.rerun()
                     except Exception as e:
@@ -155,15 +148,11 @@ def render():
     # Tabela de Pessoas Cadastradas
     st.subheader("Pessoas Cadastradas")
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM pessoas ORDER BY nome ASC")
-        pessoas = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        supabase = get_supabase_client()
+        res = supabase.table("pessoas").select("*").order("nome", desc=False).execute()
+        pessoas = res.data
 
         if pessoas:
-            # Cabeçalho da Tabela
             c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2])
             c1.write("**Nome**")
             c2.write("**Tipo**")
@@ -176,12 +165,17 @@ def render():
                 col1.write(p['nome'])
                 col2.write(p['tipo_pessoa'])
                 
-                # Formata a data recebida do MySQL para o padrão BR (DD/MM/AAAA) ao exibir
-                dt_nasc = p.get('data_nascimento')
-                data_exibicao = dt_nasc.strftime('%d/%m/%Y') if dt_nasc else "-"
-                col3.write(data_exibicao)
+                dt_nasc_str = p.get('data_nascimento')
+                if dt_nasc_str:
+                    try:
+                        dt_obj = datetime.strptime(dt_nasc_str, '%Y-%m-%d')
+                        data_exibicao = dt_obj.strftime('%d/%m/%Y')
+                    except Exception:
+                        data_exibicao = dt_nasc_str
+                else:
+                    data_exibicao = "-"
                 
-                # Aplicação da máscara visual do CPF com escape de Markdown
+                col3.write(data_exibicao)
                 col4.write(formatar_cpf_mascarado(p['cpf']))
                 
                 if col5.button("📎 Anexos", key=f"btn_anexos_{p['id']}"):

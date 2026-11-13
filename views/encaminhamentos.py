@@ -1,18 +1,15 @@
 import streamlit as st
 from datetime import datetime
-from config.database import get_db_connection
+from config.database import get_supabase_client
 
 def render():
     st.title("Formulário de Encaminhamento")
 
-    # 1. Selecionar o Aluno / Pessoa Cadastrado
+    # 1. Selecionar o Aluno / Pessoa Cadastrado via API Supabase
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, nome, data_nascimento, cpf FROM pessoas ORDER BY nome ASC")
-        pessoas = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        supabase = get_supabase_client()
+        res_pessoas = supabase.table("pessoas").select("id, nome, data_nascimento, cpf").order("nome", desc=False).execute()
+        pessoas = res_pessoas.data
     except Exception as e:
         st.error(f"Erro ao carregar lista de alunos/pessoas: {e}")
         return
@@ -24,7 +21,7 @@ def render():
     pessoa_sel = st.selectbox(
         "Selecione o Estudante/Pessoa:*",
         options=pessoas,
-        format_func=lambda p: f"{p['nome']} (CPF: {p['cpf'] or 'Não informado'})"
+        format_func=lambda p: f"{p['nome']} (CPF: {p.get('cpf') or 'Não informado'})"
     )
 
     st.divider()
@@ -173,86 +170,117 @@ def render():
                 st.error("Preencha os campos obrigatórios (*): Escola, Motivo e Profissionais de destino.")
             else:
                 try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
+                    supabase = get_supabase_client()
 
-                    # 1. Insert Principal em 'encaminhamentos'
-                    sql_principal = """
-                        INSERT INTO encaminhamentos (
-                            pessoa_id, nivel_ensino, escola, data_encaminhamento, profissionais_destino,
-                            data_ingresso_escola, escola_anterior, turma, turno, educadores_professores,
-                            mae_nome, mae_idade, mae_telefone, mae_profissao, mae_local_trabalho,
-                            pai_nome, pai_idade, pai_telefone, pai_profissao, pai_local_trabalho,
-                            endereco_residencial, ponto_referencia, melhor_turno_visita_assistente,
-                            motivo_encaminhamento, opiniao_pais, situacao_economica_beneficios,
-                            observacoes_importantes, acoes_intervencoes_escola
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """
+                    dt_encam_str = data_encaminhamento.strftime('%Y-%m-%d') if data_encaminhamento else None
+                    dt_ingr_str = data_ingresso.strftime('%Y-%m-%d') if data_ingresso else None
                     prof_str = ", ".join(profissionais)
-                    cursor.execute(sql_principal, (
-                        pessoa_sel['id'], nivel_ensino, escola, data_encaminhamento, prof_str,
-                        data_ingresso, escola_anterior, turma, turno, educadores,
-                        mae_nome, mae_idade, mae_tel, mae_prof, mae_local,
-                        pai_nome, pai_idade, pai_tel, pai_prof, pai_local,
-                        endereco_res, ponto_ref, melhor_turno_visita,
-                        motivo, opiniao_pais, situacao_econ, obs_importantes, acoes_escola
-                    ))
-                    encaminhamento_id = cursor.lastrowid
 
-                    # 2. Insert na Composição Familiar
-                    for m in fam_membros:
-                        cursor.execute("""
-                            INSERT INTO composicao_familiar 
-                            (encaminhamento_id, nome, idade, grau_parentesco, escolaridade, local_trabalho)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (encaminhamento_id, m['nome'], m['idade'], m['parentesco'], m['escolaridade'], m['trabalho']))
+                    # 1. Inserção Principal na Tabela 'encaminhamentos'
+                    dados_encaminhamento = {
+                        "pessoa_id": pessoa_sel['id'],
+                        "nivel_ensino": nivel_ensino,
+                        "escola": escola,
+                        "data_encaminhamento": dt_encam_str,
+                        "profissionais_destino": prof_str,
+                        "data_ingresso_escola": dt_ingr_str,
+                        "escola_anterior": escola_anterior,
+                        "turma": turma,
+                        "turno": turno,
+                        "educadores_professores": educadores,
+                        "mae_nome": mae_nome,
+                        "mae_idade": mae_idade if mae_idade > 0 else None,
+                        "mae_telefone": mae_tel,
+                        "mae_profissao": mae_prof,
+                        "mae_local_trabalho": mae_local,
+                        "pai_nome": pai_nome,
+                        "pai_idade": pai_idade if pai_idade > 0 else None,
+                        "pai_telefone": pai_tel,
+                        "pai_profissao": pai_prof,
+                        "pai_local_trabalho": pai_local,
+                        "endereco_residencial": endereco_res,
+                        "ponto_referencia": ponto_ref,
+                        "melhor_turno_visita_assistente": melhor_turno_visita,
+                        "motivo_encaminhamento": motivo,
+                        "opiniao_pais": opiniao_pais,
+                        "situacao_economica_beneficios": situacao_econ,
+                        "observacoes_importantes": obs_importantes,
+                        "acoes_intervencoes_escola": acoes_escola
+                    }
 
-                    # 3. Insert na Tabela Específica
+                    res_principal = supabase.table("encaminhamentos").insert(dados_encaminhamento).select("id").execute()
+                    
+                    if not res_principal.data:
+                        raise Exception("Falha ao obter o ID do encaminhamento inserido.")
+
+                    encaminhamento_id = res_principal.data[0]['id']
+
+                    # 2. Inserção na Tabela 'composicao_familiar'
+                    if fam_membros:
+                        membros_payload = []
+                        for m in fam_membros:
+                            membros_payload.append({
+                                "encaminhamento_id": encaminhamento_id,
+                                "nome": m['nome'],
+                                "idade": m['idade'] if m['idade'] > 0 else None,
+                                "grau_parentesco": m['parentesco'],
+                                "escolaridade": m['escolaridade'],
+                                "local_trabalho": m['trabalho']
+                            })
+                        supabase.table("composicao_familiar").insert(membros_payload).execute()
+
+                    # 3. Inserção na Tabela Específica
                     if nivel_ensino == "Educação Infantil":
-                        cursor.execute("""
-                            INSERT INTO encaminhamento_infantil (
-                                encaminhamento_id, alimentacao, sono, uso_chupeta_mamadeira,
-                                controle_esfincteres, higiene, brincar_socializacao,
-                                compreende_o_que_falam, consegue_expressar_desejos,
-                                uso_palavras_ou_corpo, problemas_articulacao_fala,
-                                avaliacao_auditiva_otites, psicomotricidade_ampla,
-                                psicomotricidade_fina, esquema_corporal_lateralidade, saude_medicao_posto
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            encaminhamento_id, alimentacao, sono, chupeta_mamadeira,
-                            esfincteres, higiene, brincar_social,
-                            compreende_falam, consegue_expressar,
-                            uso_corpo_palavras, problema_fala,
-                            avaliacao_auditiva, psico_ampla,
-                            psico_fina, esquema_corp, saude_posto
-                        ))
+                        dados_infantil = {
+                            "encaminhamento_id": encaminhamento_id,
+                            "alimentacao": alimentacao,
+                            "sono": sono,
+                            "uso_chupeta_mamadeira": chupeta_mamadeira,
+                            "controle_esfincteres": esfincteres,
+                            "higiene": higiene,
+                            "brincar_socializacao": brincar_social,
+                            "compreende_o_que_falam": compreende_falam,
+                            "consegue_expressar_desejos": consegue_expressar,
+                            "uso_palavras_ou_corpo": uso_corpo_palavras,
+                            "problemas_articulacao_fala": problema_fala,
+                            "avaliacao_auditiva_otites": avaliacao_auditiva,
+                            "psicomotricidade_ampla": psico_ampla,
+                            "psicomotricidade_fina": psico_fina,
+                            "esquema_corporal_lateralidade": esquema_corp,
+                            "saude_medicao_posto": saude_posto
+                        }
+                        supabase.table("encaminhamento_infantil").insert(dados_infantil).execute()
                     else:
-                        cursor.execute("""
-                            INSERT INTO encaminhamento_fundamental (
-                                encaminhamento_id, saude_medicacao_posto, avaliacao_auditiva_otites,
-                                assiduidade, aprendizagem, psicomotricidade, atencao, memoria,
-                                interesses_habilidades, uso_chupeta_mamadeira, linguagem_escrita,
-                                linguagem_leitura, linguagem_falada, raciocinio_logico_matematico,
-                                participacao_grupos, relacionamento_colegas, relacionamento_professor,
-                                reacao_regras, atitudes_trabalho_aula, interesse_participacao_familia,
-                                impressao_ambiente_familiar, intervencao_professor, intervencao_direcao,
-                                intervencao_equipe_pedagogica, outras_observacoes
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            encaminhamento_id, saude_posto, avaliacao_auditiva,
-                            assiduidade, aprendizagem, psicomotricidade, atencao, memoria,
-                            interesses_hab, chupeta_mamadeira, escrita,
-                            leitura, linguagem_falada, raciocinio_logico,
-                            part_grupos, rel_colegas, rel_professor,
-                            reacao_regras, atitudes_aula, part_familia,
-                            impressao_familia, interv_prof, interv_direcao,
-                            interv_pedag, outras_obs
-                        ))
+                        dados_fundamental = {
+                            "encaminhamento_id": encaminhamento_id,
+                            "saude_medicacao_posto": saude_posto,
+                            "avaliacao_auditiva_otites": avaliacao_auditiva,
+                            "assiduidade": assiduidade,
+                            "aprendizagem": aprendizagem,
+                            "psicomotricidade": psicomotricidade,
+                            "atencao": atencao,
+                            "memoria": memoria,
+                            "interesses_habilidades": interesses_hab,
+                            "uso_chupeta_mamadeira": chupeta_mamadeira,
+                            "linguagem_escrita": escrita,
+                            "linguagem_leitura": leitura,
+                            "linguagem_falada": linguagem_falada,
+                            "raciocinio_logico_matematico": raciocinio_logico,
+                            "participacao_grupos": part_grupos,
+                            "relacionamento_colegas": rel_colegas,
+                            "relacionamento_professor": rel_professor,
+                            "reacao_regras": reacao_regras,
+                            "atitudes_trabalho_aula": atitudes_aula,
+                            "interesse_participacao_familia": part_familia,
+                            "impressao_ambiente_familiar": impressao_familia,
+                            "intervencao_professor": interv_prof,
+                            "intervencao_direcao": interv_direcao,
+                            "intervencao_equipe_pedagogica": interv_pedag,
+                            "outras_observacoes": outras_obs
+                        }
+                        supabase.table("encaminhamento_fundamental").insert(dados_fundamental).execute()
 
-                    conn.commit()
-                    cursor.close()
-                    conn.close()
                     st.success("Encaminhamento salvo com sucesso no banco de dados!")
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar encaminhamento: {e}")
-
