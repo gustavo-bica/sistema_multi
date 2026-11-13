@@ -5,6 +5,15 @@ from config.database import get_supabase_client
 def render():
     st.title("Formulário de Encaminhamento")
 
+    # Controle de reset dos widgets e mensagem de sucesso após rerun
+    if "form_encam_reset" not in st.session_state:
+        st.session_state.form_encam_reset = 0
+
+    if st.session_state.pop("encam_salvo_sucesso", False):
+        st.success("Encaminhamento salvo com sucesso no banco de dados!")
+
+    reset_id = st.session_state.form_encam_reset
+
     # 1. Selecionar o Aluno/Pessoa Cadastrado via API Supabase
     try:
         supabase = get_supabase_client()
@@ -29,6 +38,7 @@ def render():
         options=pessoas,
         index=None,
         placeholder="Selecione",
+        key=f"pessoa_sel_encam_{reset_id}",
         format_func=lambda p: f"{p['nome']} (CPF: {p.get('cpf') or 'Não informado'})"
     )
 
@@ -38,10 +48,11 @@ def render():
     nivel_ensino = st.radio(
         "Selecione o Modelo de Encaminhamento:*",
         options=["Educação Infantil", "Ensino Fundamental"],
-        horizontal=True
+        horizontal=True,
+        key=f"nivel_ensino_encam_{reset_id}"
     )
 
-    with st.form("form_encaminhamento", clear_on_submit=False):
+    with st.form(f"form_encaminhamento_{reset_id}", clear_on_submit=False):
         st.header(f"Ficha de Encaminhamento - {nivel_ensino}")
 
         # SEÇÃO A: DADOS GERAIS DO ENCAMINHAMENTO
@@ -91,12 +102,12 @@ def render():
         fam_membros = []
         for i in range(1, 4):
             with st.expander(f"Membro Familiar {i}"):
-                f_nome = st.text_input(f"Nome {i}:", key=f"fnome_{i}")
+                f_nome = st.text_input(f"Nome {i}:", key=f"fnome_{i}_{reset_id}")
                 f_col1, f_col2, f_col3 = st.columns(3)
-                f_idade = f_col1.number_input(f"Idade {i}:", min_value=0, value=0, key=f"fidade_{i}")
-                f_parentesco = f_col2.text_input(f"Grau Parentesco {i}:", key=f"fparent_{i}")
-                f_escolaridade = f_col3.text_input(f"Escolaridade {i}:", key=f"fesc_{i}")
-                f_trabalho = st.text_input(f"Local de Trabalho {i}:", key=f"ftrab_{i}")
+                f_idade = f_col1.number_input(f"Idade {i}:", min_value=0, value=0, key=f"fidade_{i}_{reset_id}")
+                f_parentesco = f_col2.text_input(f"Grau Parentesco {i}:", key=f"fparent_{i}_{reset_id}")
+                f_escolaridade = f_col3.text_input(f"Escolaridade {i}:", key=f"fesc_{i}_{reset_id}")
+                f_trabalho = st.text_input(f"Local de Trabalho {i}:", key=f"ftrab_{i}_{reset_id}")
                 if f_nome:
                     fam_membros.append({
                         "nome": f_nome,
@@ -286,7 +297,9 @@ def render():
                         }
                         supabase.table("encaminhamento_fundamental").insert(dados_fundamental).execute()
 
-                    st.success("Encaminhamento salvo com sucesso!")
+                    # Incrementa a key para resetar todos os campos (inclusive fora do form) e guarda aviso
+                    st.session_state.form_encam_reset += 1
+                    st.session_state.encam_salvo_sucesso = True
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar encaminhamento: {e}")

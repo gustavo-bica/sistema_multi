@@ -1,5 +1,5 @@
 import streamlit as st
-from views import cadastros, encaminhamentos, solicitacoes_encaminhamento, relatorios, atendimentos
+from views import inicio, cadastros, encaminhamentos, solicitacoes_encaminhamento, relatorios, atendimentos
 
 st.set_page_config(
     page_title="Sistema Multi",
@@ -7,9 +7,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# Inicializa os estados no session_state
+# Inicializa os estados no session_state com "Início" como tela padrão
 if "pagina_ativa" not in st.session_state:
-    st.session_state.pagina_ativa = "Cadastros"
+    st.session_state.pagina_ativa = "Início"
 
 if "menu_encaminhamentos_aberto" not in st.session_state:
     st.session_state.menu_encaminhamentos_aberto = False
@@ -62,6 +62,9 @@ st.markdown("""
 
 # Menu Lateral utilizando st.button e controle de estado para o dropdown
 with st.sidebar:
+    if st.button("Início", key="btn_inicio"):
+        st.session_state.pagina_ativa = "Início"
+
     if st.button("Cadastros", key="btn_cadastros"):
         st.session_state.pagina_ativa = "Cadastros"
 
@@ -81,14 +84,16 @@ with st.sidebar:
 
     if st.button("Atendimentos", key="btn_atendimentos"):
         st.session_state.pagina_ativa = "Atendimentos"
-
-    if st.button("Relatórios", key="btn_relatorios"):
-        st.session_state.pagina_ativa = "Relatórios"
+############################################################################
+    #if st.button("Relatórios", key="btn_relatorios"):
+        #st.session_state.pagina_ativa = "Relatórios"
 
 # Roteamento de Telas
 menu = st.session_state.pagina_ativa
 
-if menu == "Cadastros":
+if menu == "Início":
+    inicio.render()
+elif menu == "Cadastros":
     cadastros.render()
 elif menu == "Novo encaminhamento":
     encaminhamentos.render()
@@ -96,5 +101,5 @@ elif menu == "Solicitações de Encaminhamento":
     solicitacoes_encaminhamento.render()
 elif menu == "Atendimentos":
     atendimentos.render()
-elif menu == "Relatórios":
-    relatorios.render()
+#elif menu == "Relatórios":
+    #relatorios.render()

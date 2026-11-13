@@ -92,7 +92,10 @@ def modal_anexos(pessoa):
             pdf_sel = st.selectbox(
                 "Selecione para visualizar:",
                 options=arquivos,
-                format_func=lambda a: a['nome']
+                index=None,
+                placeholder="Selecione",
+                format_func=lambda a: a['nome'],
+                key=f"sel_pdf_{pessoa['id']}"
             )
             if pdf_sel:
                 render_pdf_embed(pdf_sel['url'], height=550)
