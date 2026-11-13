@@ -3,7 +3,7 @@ from datetime import date, datetime
 from config.database import get_supabase_client
 
 def render():
-    st.title("🩺 Registro de Atendimentos")
+    st.title("Registro de Atendimentos")
 
     try:
         supabase = get_supabase_client()

@@ -160,7 +160,7 @@ def modal_detalhes_encaminhamento(enc):
 
 
 def render():
-    st.title("📋 Solicitações de Encaminhamento")
+    st.title("Solicitações de Encaminhamento")
     
     try:
         supabase = get_supabase_client()
